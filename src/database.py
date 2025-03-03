@@ -2,10 +2,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase, Session
 from typing import Annotated
 from fastapi import Depends
-from .gobal_variables import DB_URI
+from gobal_variables import DB_URI
+from sqlalchemy import Column, DateTime, func
 
 
-print("DCCC->", DB_URI)
 # postgres database url
 postgres_url = DB_URI
 
@@ -18,7 +18,11 @@ session = sessionmaker(autoflush=False, autocommit=False, bind=engine)
 
 # base class initiated
 class Base(DeclarativeBase):
-    pass
+    __abstract__ = True
+
+    created_at = Column(DateTime, default = func.now())
+    updated_at = Column(DateTime, default = func.now(), onupdate=func.now())
+    deleted_at = Column(DateTime, nullable=True)
 
 
 def get_session():

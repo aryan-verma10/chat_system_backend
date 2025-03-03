@@ -1,9 +1,20 @@
-from database import Base
-from sqlalchemy import Column, DateTime, func
+import re
+from fastapi.responses import JSONResponse
 
-class CommonModel(Base):
-    __abstract__ = True
+def email_validator_helper_func(email: str)->bool:
+    email_regex = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
 
-    created_at = Column(DateTime, func.now())
-    updated_at = Column(DateTime, func.now(), onupdate=func.now())
-    deleted_at = Column(DateTime, nullable=True)
+    if re.match(email_regex, email):
+        return True
+    
+    return False
+
+def generic_json_response(success: bool = True, status_code: int = 200, message: str = "", error: str = ""):
+    content = {
+        "success": success,
+        "status_code": status_code,
+        "message": message,
+        "error": error
+    }
+
+    return JSONResponse(content=content, status_code = status_code)
