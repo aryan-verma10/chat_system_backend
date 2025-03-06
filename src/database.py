@@ -2,9 +2,15 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase, Session
 from typing import Annotated
 from fastapi import Depends
-from gobal_variables import DB_URI
+from gobal_variables import DB_URI, REDIS_HOST, REDIS_PORT
 from sqlalchemy import Column, DateTime, func
+from contextlib import asynccontextmanager
+import redis.asyncio as redis
+from fastapi import FastAPI
 
+
+# global redis connector
+redis_client = None
 
 # postgres database url
 postgres_url = DB_URI
@@ -23,6 +29,25 @@ class Base(DeclarativeBase):
     created_at = Column(DateTime, default = func.now())
     updated_at = Column(DateTime, default = func.now(), onupdate=func.now())
     deleted_at = Column(DateTime, nullable=True)
+
+
+# redis setup
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    '''
+        setting up redis server on will start on startup
+    '''
+
+    global redis_client
+    print("Starting redis server on startup...")
+    redis_client = await redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+
+    yield
+
+    print("Shutting down redis server on shutdown...")
+    redis_client.close()
+
+
 
 
 def get_session():
