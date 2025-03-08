@@ -6,11 +6,8 @@ from gobal_variables import DB_URI, REDIS_HOST, REDIS_PORT
 from sqlalchemy import Column, DateTime, func
 from contextlib import asynccontextmanager
 import redis.asyncio as redis
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 
-
-# global redis connector
-redis_client = None
 
 # postgres database url
 postgres_url = DB_URI
@@ -38,14 +35,19 @@ async def lifespan(app: FastAPI):
         setting up redis server on will start on startup
     '''
 
-    global redis_client
     print("Starting redis server on startup...")
-    redis_client = await redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+    app.state.redis_client = await redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+    # checking if redis server started
+    try:
+        if await app.state.redis_client.ping():
+            print("Redis connected successfully...")
+    except Exception as err:
+        print("[ERROR] Redis is not connected...", err)
 
     yield
 
     print("Shutting down redis server on shutdown...")
-    redis_client.close()
+    await app.state.redis_client.close()
 
 
 
@@ -60,6 +62,13 @@ def get_session():
 
     finally:
         db.close()
+
+
+def get_redis_client(request: Request):
+    '''
+        return redis client
+    '''
+    return request.app.state.redis_client
 
 
 # Session is annotated to be used in apis later directly
