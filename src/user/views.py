@@ -10,7 +10,7 @@ class Login:
     '''
         Api collection to login the user
     '''
-    async def post(self, db: session_dep, email: str = Query()):
+    async def post(self, db: session_dep, redis = Depends(get_redis_client), email: str = Query()):
         '''
             Post api to provide JWT tokens after successfull login
         '''
