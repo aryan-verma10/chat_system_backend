@@ -5,6 +5,8 @@ class ResponseConstants:
     USER_LOGIN_SUCCESSFULL = "User login successfull."
     OTP_IS_INVALID = "Otp is invalid."
     USER_SIGNUP_SUCCESSFULL = "User sign-up successfull."
+    USER_PROFILE_DATA_FETCHED_SUCCESSFULLY = "User profile data fetched successfully."
+    USER_DATA_NOT_FOUND = "User data not found."
 
 
 class RedisConstants:

@@ -1,7 +1,10 @@
 import re
-from fastapi.responses import JSONResponse
 import datetime
 import jwt
+from fastapi import Security
+from fastapi.responses import JSONResponse
+from fastapi.security import HTTPBearer
+from fastapi import HTTPException
 from gobal_variables import (JWT_HASHING_ALGORITHM, JWT_SECRET_KEY, 
                               JWT_REFRESH_TOKEN_EXPIRY_MINUTES,
                               JWT_ACCESS_TOKEN_EXPIRY_MINUTES)
@@ -34,23 +37,23 @@ class JWTAuthentication:
     REFRESH = "refresh"
     ACCESS = "access"
 
-
     def __init__(self):
+        self.datetime_format = r"""%Y-%m-%d %H:%M:%S.%f"""
         self.secret_key = JWT_SECRET_KEY
         self.algorithm = JWT_HASHING_ALGORITHM
-        self.access_token_expiry_min = JWT_ACCESS_TOKEN_EXPIRY_MINUTES
-        self.refresh_token_expiry_min = JWT_REFRESH_TOKEN_EXPIRY_MINUTES
+        self.access_token_expiry_min = int(JWT_ACCESS_TOKEN_EXPIRY_MINUTES)
+        self.refresh_token_expiry_min = int(JWT_REFRESH_TOKEN_EXPIRY_MINUTES)
 
     async def create_access_token(self, data: dict)->str:
         '''
             access token creation
-        '''
+        '''     
         to_encode = data.copy()
-        expiry = datetime.datetime.utcnow()+datetime.timedelta(self.access_token_expiry_min)
+        expiry = str(datetime.datetime.utcnow()+datetime.timedelta(self.access_token_expiry_min))
         to_encode["expiry"] = expiry
         to_encode["token_type"] = self.ACCESS 
 
-        access_token = await jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
+        access_token = jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
         return access_token
     
     
@@ -59,11 +62,11 @@ class JWTAuthentication:
             refresh token generation
         ''' 
         to_encode = data.copy()
-        expiry = datetime.datetime.utcnow()+datetime.timedelta(self.refresh_token_expiry_min)
+        expiry = str(datetime.datetime.utcnow()+datetime.timedelta(self.refresh_token_expiry_min))
         to_encode["expiry"] = expiry
         to_encode["token_type"] = self.REFRESH
 
-        refresh_token = await jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
+        refresh_token = jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
         return refresh_token
 
 
@@ -72,9 +75,11 @@ class JWTAuthentication:
             decode the jwt access token 
         '''
         try:
-            payload = await jwt.decode(access_token, self.secret_key, algorithms=self.algorithm)
-            expiry_time = payload["expiry"]
+            
+            payload = jwt.decode(access_token, self.secret_key, algorithms=self.algorithm)
+            expiry_time = datetime.datetime.strptime(payload["expiry"], self.datetime_format)
             token_type = payload["token_type"]
+            
             if datetime.datetime.utcnow()>expiry_time:
                 raise Exception("Token expired")
 
@@ -93,8 +98,8 @@ class JWTAuthentication:
             decode the jwt access token 
         '''
         try:
-            payload = await jwt.decode(refresh_token, self.secret_key, algorithms=self.algorithm)
-            expiry_time = payload["expiry"]
+            payload = jwt.decode(refresh_token, self.secret_key, algorithms=self.algorithm)
+            expiry_time = datetime.datetime.strptime(payload["expiry"], self.datetime_format)
             token_type = payload["token_type"]
             if datetime.datetime.utcnow()>expiry_time:
                 raise Exception("Token expired")
@@ -107,3 +112,23 @@ class JWTAuthentication:
 
         except Exception as err:
             return {"error": err}
+        
+
+
+    async def validate_bearer_token(self, auth: str = Security(HTTPBearer())):
+        '''
+            Helper function to validate the bearer token
+        '''
+
+        token = auth.credentials
+        try:
+            decoded_data = await self.decode_access_token(access_token=token)
+            return decoded_data["id"]
+
+        except Exception as err:
+            raise HTTPException(
+                status_code=403,
+                detail = str(err)
+            )
+        
+jwt_auth = JWTAuthentication()

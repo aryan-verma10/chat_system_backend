@@ -1,5 +1,5 @@
 from fastapi import Query, Depends
-from utility import email_validator_helper_func, generic_json_response, JWTAuthentication
+from utility import email_validator_helper_func, generic_json_response, jwt_auth
 from .constants import ResponseConstants, RedisConstants
 from database import session_dep, get_redis_client
 from .models import User
@@ -37,12 +37,14 @@ class Login:
                 )
             
             
-            jwt_auth = JWTAuthentication()
-            
             if user_details:
                 # provide the JWT tokens
-                access_token = await jwt_auth.create_access_token(user_details)
-                refresh_token = await jwt_auth.create_refresh_token(user_details)
+                data = {
+                    "id": str(user_details.id),
+                    "email": user_details.email
+                }
+                access_token = await jwt_auth.create_access_token(data)
+                refresh_token = await jwt_auth.create_refresh_token(data)
                 
                 return generic_json_response(
                     success = True,
@@ -61,7 +63,7 @@ class Login:
             
             if user_details:
                 data = {
-                    "id": user_details.id,
+                    "id": str(user_details.id),
                     "email": user_details.email,
                 }
                 # provide the JWT tokens
@@ -79,13 +81,15 @@ class Login:
             
 
             new_user = User(email=email)
-            await db.add(new_user)
+            
+            db.add(new_user)
             await db.commit()
             await db.refresh(new_user)
 
+            
             # provide tokens
             data = {
-                "id": new_user.id,
+                "id": str(new_user.id),
                 "email": new_user.email
             }
             
@@ -95,6 +99,10 @@ class Login:
                 success = True,
                 status_code = 200,
                 message = ResponseConstants.USER_SIGNUP_SUCCESSFULL,
+                response = {
+                    "access_token": access_token,
+                    "refresh_token": refresh_token
+                }
             )
             
         
@@ -142,5 +150,56 @@ class SentOtp:
             )
 
 
+
+class UserProfile:
+    '''
+        API collection related to user profile    
+    ''' 
+    
+    async def get(self, db: session_dep, user_id = Depends(jwt_auth.validate_bearer_token), redis = Depends(get_redis_client)):
+        '''
+             Get api to get the User profile data
+        '''
+        try:
+            # cache to be implemented [CHECK]
+
+            user_data = await db.execute(select(User).filter(User.id == user_id))
+            user_data = user_data.scalar_one_or_none()
+            
+            if not user_data:
+                return generic_json_response(
+                    success = False,
+                    status_code = 404,
+                    message = ResponseConstants.USER_DATA_NOT_FOUND,
+                )
+            
+
+            response_body = {
+                "id": str(user_data.id),
+                "name": user_data.name,
+                "user_name": user_data.user_name,
+                "email": user_data.email,
+                "phone_number": user_data.phone_number
+            }
+
+
+            return generic_json_response(
+                success = True,
+                status_code = 200,
+                message = ResponseConstants.USER_PROFILE_DATA_FETCHED_SUCCESSFULLY,
+                response = response_body
+            )
+        
+        except Exception as err:
+            return generic_json_response(
+                success = True,
+                status_code = 500,
+                message = ResponseConstants.INTERNAL_SERVER_ERROR,
+                error = str(err)
+            )
+
+
+
 login_view = Login()
 sent_otp_view = SentOtp()
+user_profile_view = UserProfile()
