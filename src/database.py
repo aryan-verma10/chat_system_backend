@@ -1,4 +1,5 @@
 from sqlalchemy import create_engine
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase, Session
 from typing import Annotated
 from fastapi import Depends
@@ -13,10 +14,10 @@ from fastapi import FastAPI, Request
 postgres_url = DB_URI
 
 # create engine for database connection
-engine = create_engine(postgres_url)
+engine = create_async_engine(postgres_url)
 
 # creating session for orms
-session = sessionmaker(autoflush=False, autocommit=False, bind=engine)
+session = sessionmaker(autoflush=False, autocommit=False, bind=engine, class_=AsyncSession)
 
 
 # base class initiated
@@ -52,16 +53,13 @@ async def lifespan(app: FastAPI):
 
 
 
-def get_session():
+async def get_session():
     '''
         function to provide session of orm of api endpoints
     '''
-    db = session()
-    try:
+    async with session() as db:
         yield db
 
-    finally:
-        db.close()
 
 
 def get_redis_client(request: Request):
@@ -71,5 +69,6 @@ def get_redis_client(request: Request):
     return request.app.state.redis_client
 
 
+
 # Session is annotated to be used in apis later directly
-session_dep = Annotated[Session, Depends(get_session)]
+session_dep = Annotated[AsyncSession, Depends(get_session)]
