@@ -128,7 +128,7 @@ class JWTAuthentication:
         except Exception as err:
             raise HTTPException(
                 status_code=403,
-                detail = str(err)
+                detail = "Invalid token provided."
             )
         
 jwt_auth = JWTAuthentication()

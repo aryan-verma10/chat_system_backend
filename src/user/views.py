@@ -6,6 +6,8 @@ from .models import User
 from .utilities import send_otp_helper_func
 from gobal_variables import BY_PASS_OTP
 from sqlalchemy.future import select
+import json
+from .schema import User as user_request_body
 
 
 class Login:
@@ -25,8 +27,8 @@ class Login:
                 )
             
             
-            user_otp, user_details = await redis.mget(RedisConstants.USER_OTP_EMAIL__+email,
-                                        RedisConstants.USER_DETAIL_EMAIL__+email)
+            user_otp, user_details = await redis.mget(RedisConstants.USER_OTP_EMAIL+email,
+                                        RedisConstants.USER_DETAIL_EMAIL+email)
             
             
             if not user_otp or otp != BY_PASS_OTP:
@@ -132,7 +134,7 @@ class SentOtp:
                 )
             
             otp = await send_otp_helper_func(email)
-            await redis.set(RedisConstants.USER_OTP_EMAIL__+email, otp, ex=300)
+            await redis.set(RedisConstants.USER_OTP_EMAIL+email, otp, ex=300)
             
             return generic_json_response(
                 success = True,
@@ -161,7 +163,16 @@ class UserProfile:
              Get api to get the User profile data
         '''
         try:
-            # cache to be implemented [CHECK]
+            cached_profile_details = await redis.get(RedisConstants.USER_PROFILE_DETAILS+user_id)
+
+            if cached_profile_details:
+                json_data = json.loads(cached_profile_details)
+            
+                return generic_json_response(success = True,
+                                             status_code = 200,
+                                             message = ResponseConstants.USER_PROFILE_DATA_FETCHED_SUCCESSFULLY,
+                                             response = json_data)
+
 
             user_data = await db.execute(select(User).filter(User.id == user_id))
             user_data = user_data.scalar_one_or_none()
@@ -182,7 +193,9 @@ class UserProfile:
                 "phone_number": user_data.phone_number
             }
 
-
+            # caching in redis
+            await redis.set(RedisConstants.USER_PROFILE_DETAILS+user_id, json.dumps(response_body), ex=3600) 
+            
             return generic_json_response(
                 success = True,
                 status_code = 200,
@@ -198,7 +211,42 @@ class UserProfile:
                 error = str(err)
             )
 
+    
+    async def put(self, db: session_dep, request_body : user_request_body, user_id = Depends(jwt_auth.validate_bearer_token), redis = Depends(get_redis_client)):
+        try:
+            request_body = request_body.model_dump(exclude_none=True)
+            if not request_body:
+                return generic_json_response(
+                    success = True,
+                    status_code = 200,
+                    message = ResponseConstants.NO_NEW_DATA_UPDATED
+                )
+            
+            user = await db.execute(select(User).filter(User.id == user_id))
+            user = user.scalar_one_or_none()
+            
+            for key, value in request_body.items():
+                setattr(user, key, value)
 
+            await db.commit()
+            await db.refresh(user)
+
+            # delete outdated information from cache
+            await redis.delete(RedisConstants.USER_PROFILE_DETAILS+user_id)
+
+            return generic_json_response(
+                success = True,
+                status_code = 200,
+                message = ResponseConstants.USER_INFO_UPDATED_SUCCESSFULLY
+            )
+
+        except Exception as err:
+            return generic_json_response(
+                success = False,
+                status_code = 500,
+                message = ResponseConstants.INTERNAL_SERVER_ERROR,
+                error = str(err)
+            )
 
 login_view = Login()
 sent_otp_view = SentOtp()
