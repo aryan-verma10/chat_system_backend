@@ -9,6 +9,10 @@ class ResponseConstants:
     USER_DATA_NOT_FOUND = "User data not found."
     NO_NEW_DATA_UPDATED = "No new data updated in user profile."
     USER_INFO_UPDATED_SUCCESSFULLY = "User information updated successfully."
+    THIS_USER_IS_NOT_AVAILABLE = "This user is not available."
+    NEW_CONNECTION_ADDED_SUCCESSFULLY = "New connection added successfully."
+    USER_CONNECTION_LIST_FETCHED_SUCCESSFULLY = "User connection list fetched successfully."
+
 
 class RedisConstants:
     '''
@@ -17,3 +21,4 @@ class RedisConstants:
     USER_OTP_EMAIL = "user_otp_email:"
     USER_DETAIL_EMAIL = "user_detail_email:"
     USER_PROFILE_DETAILS = "user_profile_details:"
+    USER_CONNECTION_LIST = "user_connection_list:"

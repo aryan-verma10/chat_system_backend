@@ -2,12 +2,12 @@ from fastapi import Query, Depends
 from utility import email_validator_helper_func, generic_json_response, jwt_auth
 from .constants import ResponseConstants, RedisConstants
 from database import session_dep, get_redis_client
-from .models import User
+from .models import User, UserConnections
 from .utilities import send_otp_helper_func
 from gobal_variables import BY_PASS_OTP
 from sqlalchemy.future import select
 import json
-from .schema import User as user_request_body
+from .schema import User as user_request_body, UserConnectionPostSchema 
 
 
 class Login:
@@ -248,6 +248,109 @@ class UserProfile:
                 error = str(err)
             )
 
+
+class UserConnection():
+    '''
+        User connection api collection
+    '''
+
+    async def post(self, db: session_dep, request_body : UserConnectionPostSchema, user_id =  Depends(jwt_auth.validate_bearer_token), redis = Depends(get_redis_client)):
+        '''
+            Post api to add a connection as new connection
+        '''
+        try:
+            request_body = request_body.model_dump()
+
+            connection_user = await db.execute(select(User).filter(User.user_id == request_body.user_connection_id))
+            connection_user = connection_user.scalar_one_or_none()
+
+            if not connection_user:
+                return generic_json_response(
+                    success = False,
+                    status_code = 404,
+                    message = ResponseConstants.THIS_USER_IS_NOT_AVAILABLE
+                )
+            
+            user_name = request_body.user_connection_name
+            if not user_name:
+                user_name = self.user_connection_name(connection_user)
+
+            new_user_connection = UserConnections(
+                user_id = user_id,
+                user_connection_id = request_body.user_connection_id,
+                user_connection_name = user_name
+            )
+
+            db.add(new_user_connection)
+            await db.commit()
+            await db.refresh(new_user_connection)
+
+            return generic_json_response(
+                success = True,
+                status_code = 200,
+                message = ResponseConstants.NEW_CONNECTION_ADDED_SUCCESSFULLY
+            )
+
+        except Exception as err:
+            return generic_json_response(
+                success = False,
+                status_code = 500,
+                message = ResponseConstants.INTERNAL_SERVER_ERROR,
+                error = str(err)
+            ) 
+        
+    
+
+    async def get(self, db: session_dep, redis = Depends(get_redis_client), user_id = Depends(jwt_auth.validate_bearer_token)):
+        '''
+            Get api to get all the friends list of the current user
+        '''
+        try:
+            user_connection_list = await redis.get(RedisConstants.USER_CONNECTION_LIST+user_id)
+            if user_connection_list:
+                return generic_json_response(
+                    success = True,
+                    status_code = 200,
+                    message = ResponseConstants.USER_CONNECTION_LIST_FETCHED_SUCCESSFULLY,
+                    resposne = user_connection_list
+                )
+
+            user_connection_list = await db.execute(select(UserConnections.id, 
+                                                           UserConnections.user_connection_id, 
+                                                           UserConnections.user_connection_name).filter(User.user_id == user_id))
+
+            user_connection_list = user_connection_list.scalars().all()
+
+            print(user_connection_list)
+            return {"hllo": "world"}
+        
+         
+        except Exception as err:
+            return generic_json_response(
+                success = False,
+                status_code = 500,
+                message = ResponseConstants.INTERNAL_SERVER_ERROR,
+                error = str(err)
+            )
+
+
+    def user_connection_name(self, user)->str:
+        '''
+            getting user connection name from db
+        '''
+        user_name = None
+        if user.user_name:
+            user_name = user.user_name
+
+        elif user.email:
+            user_name = user.email.split("@")[0]
+
+        return user_name
+
+
+
+
 login_view = Login()
 sent_otp_view = SentOtp()
 user_profile_view = UserProfile()
+user_connection_view = UserConnection()
