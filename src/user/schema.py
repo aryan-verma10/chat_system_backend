@@ -14,5 +14,5 @@ class UserConnectionPostSchema(BaseModel):
     '''
         User connection post request body
     '''
-    user_connection_id : str 
+    user_connection_id : str
     user_connection_name: str = None

@@ -12,6 +12,11 @@ class ResponseConstants:
     THIS_USER_IS_NOT_AVAILABLE = "This user is not available."
     NEW_CONNECTION_ADDED_SUCCESSFULLY = "New connection added successfully."
     USER_CONNECTION_LIST_FETCHED_SUCCESSFULLY = "User connection list fetched successfully."
+    USER_IS_ALREADY_A_CONNECTION = "User is already a connection."
+    INVALID_REQUEST_BODY_PROVIDED = "Invalid request body provided."
+    USER_NOT_FOUND = "User not found."
+    USER_CONNECTION_NAME_UPDATED = "User connection name updated successfully."
+    USER_CONNECTION_MUTED_SUCCESSFULLY = "User connection muted/unmuted successfully."
 
 
 class RedisConstants:

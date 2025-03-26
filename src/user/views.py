@@ -84,11 +84,20 @@ class Login:
 
             new_user = User(email=email)
             
-            db.add(new_user)
-            await db.commit()
-            await db.refresh(new_user)
-
+            try:
+                db.add(new_user)
+                await db.commit()
+                await db.refresh(new_user)
             
+            except Exception as err:
+                await db.rollback()
+                return generic_json_response(
+                    success = False,
+                    status_code = 500,
+                    message = ResponseConstants.INTERNAL_SERVER_ERROR,
+                    error = str(err)
+                )
+               
             # provide tokens
             data = {
                 "id": str(new_user.id),
@@ -228,8 +237,18 @@ class UserProfile:
             for key, value in request_body.items():
                 setattr(user, key, value)
 
-            await db.commit()
-            await db.refresh(user)
+            try:
+                await db.commit()
+                await db.refresh(user)
+
+            except Exception as err:
+                await db.rollback()
+                return generic_json_response(
+                    success = False,
+                    status_code = 500,
+                    messsage = ResponseConstants.INTERNAL_SERVER_ERROR,
+                    error = str(err)
+                )
 
             # delete outdated information from cache
             await redis.delete(RedisConstants.USER_PROFILE_DETAILS+user_id)
@@ -260,8 +279,7 @@ class UserConnection():
         '''
         try:
             request_body = request_body.model_dump()
-
-            connection_user = await db.execute(select(User).filter(User.user_id == request_body.user_connection_id))
+            connection_user = await db.execute(select(User).filter(User.id == request_body["user_connection_id"]))
             connection_user = connection_user.scalar_one_or_none()
 
             if not connection_user:
@@ -271,19 +289,48 @@ class UserConnection():
                     message = ResponseConstants.THIS_USER_IS_NOT_AVAILABLE
                 )
             
-            user_name = request_body.user_connection_name
+            # checking if relation between already exists
+            relation_check = await db.execute(select(UserConnections.id).filter(
+                (UserConnections.user_id == user_id) & (UserConnections.user_connection_id == request_body["user_connection_id"])
+                ))
+
+            relation_check = relation_check.scalar_one_or_none()
+
+            if relation_check:
+                return generic_json_response(
+                    success = True,
+                    status_code = 200,
+                    message = ResponseConstants.USER_IS_ALREADY_A_CONNECTION
+                )
+            
+
+            user_name = request_body["user_connection_name"]
+            
             if not user_name:
                 user_name = self.user_connection_name(connection_user)
 
             new_user_connection = UserConnections(
                 user_id = user_id,
-                user_connection_id = request_body.user_connection_id,
+                user_connection_id = request_body["user_connection_id"],
                 user_connection_name = user_name
             )
 
-            db.add(new_user_connection)
-            await db.commit()
-            await db.refresh(new_user_connection)
+            try:
+                db.add(new_user_connection)
+                await db.commit()
+                await db.refresh(new_user_connection)
+            
+            except Exception as err:
+                await db.rollback() # rollback changes if any error
+                return generic_json_response(
+                    success = False,
+                    status_code = 500,
+                    message = ResponseConstants.INTERNAL_SERVER_ERROR,
+                    error = str(err)
+                )
+
+            # deleting user_connection list after new addition
+            await redis.delete(RedisConstants.USER_CONNECTION_LIST+user_id)
 
             return generic_json_response(
                 success = True,
@@ -312,19 +359,85 @@ class UserConnection():
                     success = True,
                     status_code = 200,
                     message = ResponseConstants.USER_CONNECTION_LIST_FETCHED_SUCCESSFULLY,
-                    resposne = user_connection_list
+                    response = json.loads(user_connection_list)
                 )
 
             user_connection_list = await db.execute(select(UserConnections.id, 
                                                            UserConnections.user_connection_id, 
-                                                           UserConnections.user_connection_name).filter(User.user_id == user_id))
+                                                           UserConnections.user_connection_name,
+                                                           UserConnections.is_muted).filter(UserConnections.user_id == user_id))
 
-            user_connection_list = user_connection_list.scalars().all()
+            user_connection_list = user_connection_list.fetchall()
+            
+            response_body_list = []
+            for user_connection in user_connection_list:
+                response_body = {
+                    "connection_id": str(user_connection[0]),
+                    "user_connection_id": str(user_connection[1]),
+                    "user_connection_name": user_connection[2],
+                    "is_muted": user_connection[3]
+                }
 
-            print(user_connection_list)
-            return {"hllo": "world"}
+                response_body_list.append(response_body)
+
+
+            await redis.set(RedisConstants.USER_CONNECTION_LIST+user_id, json.dumps(response_body_list), ex = 172800)
+
+            return generic_json_response(
+                success = True,
+                status_code = 200,
+                message = ResponseConstants.USER_CONNECTION_LIST_FETCHED_SUCCESSFULLY,
+                response = response_body_list
+            )
         
          
+        except Exception as err:
+            return generic_json_response(
+                success = False,
+                status_code = 500,
+                message = ResponseConstants.INTERNAL_SERVER_ERROR,
+                error = str(err)
+            )
+
+
+    async def patch(self, db: session_dep, redis = Depends(get_redis_client), user_connection_name: str = Query(), user_connection_id: str = Query(), user_id = Depends(jwt_auth.validate_bearer_token)):
+        '''
+            Patch api to change the user_connection_name for a user
+        '''
+        try:
+            user_connection = await db.execute(select(UserConnections).filter((UserConnections.user_id == user_id) & (UserConnections.user_connection_id == user_connection_id)))
+            user_connection = user_connection.scalar_one_or_none()
+
+            if not user_connection:
+                return generic_json_response(
+                    success = False,
+                    status_code = 404,
+                    message = ResponseConstants.USER_NOT_FOUND
+                )
+
+            user_connection.user_connection_name = user_connection_name
+
+            try:
+                await db.commit()
+                await db.refresh(user_connection)
+            
+            except Exception as err:
+                return generic_json_response(
+                    success = False,
+                    status_code = 500,
+                    message = ResponseConstants.INTERNAL_SERVER_ERROR,
+                    error = str(err)
+                )
+            
+            # deleting existing User connection list
+            await redis.delete(RedisConstants.USER_CONNECTION_LIST+user_id)
+
+            return generic_json_response(
+                success = True,
+                status_code = 200,
+                message = ResponseConstants.USER_CONNECTION_NAME_UPDATED
+            )
+
         except Exception as err:
             return generic_json_response(
                 success = False,
@@ -348,9 +461,60 @@ class UserConnection():
         return user_name
 
 
+class MuteUnMuteUser:
+    '''
+        Api collection to mute the user connection
+    '''
+    async def patch(self, db: session_dep, user_connection_id: str, redis = Depends(get_redis_client), user_id = Depends(jwt_auth.validate_bearer_token)):
+        try:
+            user_connection_obj = await db.execute(select(UserConnections).filter((UserConnections.user_id == user_id)
+                                                    & (UserConnections.user_connection_id == user_connection_id)))
+
+            user_connection_obj = user_connection_obj.scalar_one_or_none()
+
+            if not user_connection_obj:
+                return generic_json_response(
+                    success = False,
+                    status_code = 404,
+                    message = ResponseConstants.USER_NOT_FOUND
+                )
+            
+            user_connection_obj.is_muted = False if user_connection_obj.is_muted else True
+        
+            try:
+                await db.rollback()
+                await db.commit()
+                await db.refresh(user_connection_obj)
+
+            except Exception as err:
+                return generic_json_response(
+                    success = False,
+                    status_code = 500,
+                    message = ResponseConstants.INTERNAL_SERVER_ERROR,
+                    error = str(err)
+                )
+            
+            
+            await redis.delete(RedisConstants.USER_CONNECTION_LIST+user_id)
+
+            return generic_json_response(
+                success = True,
+                status_code = 200,
+                message = ResponseConstants.USER_CONNECTION_MUTED_SUCCESSFULLY
+            )
+
+        except Exception as err:
+            return generic_json_response(
+                success = False,
+                status_code = 500,
+                message = ResponseConstants.INTERNAL_SERVER_ERROR,
+                error = str(err)
+            )
+
 
 
 login_view = Login()
 sent_otp_view = SentOtp()
 user_profile_view = UserProfile()
 user_connection_view = UserConnection()
+mute_unmute_user_view = MuteUnMuteUser()

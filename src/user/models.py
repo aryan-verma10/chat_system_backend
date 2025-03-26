@@ -14,7 +14,8 @@ class User(Base):
     phone_number = Column(String, nullable = True, unique=True)
 
     # relations
-    users_connection = relationship("users_connection", back_populates="users")
+    user_id = relationship("UserConnections", foreign_keys="[UserConnections.user_id]", back_populates="user")
+    connections = relationship("UserConnections", foreign_keys="[UserConnections.user_connection_id]", back_populates="connection")
 
 class UserConnections(Base):
     __tablename__ = "users_connection"
@@ -25,8 +26,9 @@ class UserConnections(Base):
     user_connection_name = Column(String, nullable = False, unique = True)
     is_muted = Column(Boolean, default=False, nullable=False)
 
-    # relations
-    user = relationship("users", back_populates="users_connection")
 
+    # relations
+    user = relationship("User", foreign_keys=[user_id], back_populates="user_id")
+    connection = relationship("User", foreign_keys=[user_connection_id], back_populates="connections")
 
 
